@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Code Reviewer</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+               margin: 0; padding: 20px; background-color: #f0f2f5; }
+        h1 { color: #333; }
+        #container { max-width: 900px; margin: 0 auto; background: #fff; 
+                     padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        textarea { width: 95%; height: 300px; padding: 10px; border: 1px solid #ccc; 
+                   border-radius: 4px; font-family: "Courier New", Courier, monospace; }
+        button { background-color: #007bff; color: white; padding: 10px 15px; 
+                 border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background-color: #0056b3; }
+        #results { margin-top: 20px; }
+        .issue { border-left: 4px solid #d9534f; padding: 10px; 
+                 background: #f9f2f2; margin-bottom: 10px; border-radius: 4px; }
+        .issue strong { color: #d9534f; }
+        .issue-bandit { border-left-color: #d9534f; } /* Red for Security */
+        .issue-pylint { border-left-color: #f0ad4e; } /* Orange for Lint */
+        .issue-radon  { border-left-color: #5bc0de; } /* Blue for Complexity */
+    </style>
+</head>
+<body>
+
+    <div id="container">
+        <h1>AI Code Reviewer</h1>
+        <p>Paste your Python code below to find bugs, security issues, and style errors.</p>
+
+        <textarea id="codeInput" placeholder="import os..."></textarea>
+        <br>
+        <!-- The 'onclick' is removed. Our JS file will find this button by its ID -->
+        <button id="analyzeButton">Analyze Code</button>
+
+        <hr>
+        <h2>Results</h2>
+        <div id="results">
+            <p>Results will appear here...</p>
+        </div>
+    </div>
+
+    <!-- 
+      This script tag now points to your external JavaScript file.
+      'defer' tells the browser to wait until the HTML is parsed before running the script.
+    -->
+    <script src="/static/main.js" defer></script>
+
+</body>
+</html>
