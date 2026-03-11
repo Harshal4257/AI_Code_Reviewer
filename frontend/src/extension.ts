@@ -2,85 +2,96 @@ import * as vscode from 'vscode';
 import axios from 'axios';
 
 export function activate(context: vscode.ExtensionContext) {
-
-    console.log('AI Reviewer is active!');
-
-    // Create a collection to hold the colored squiggly lines
     const diagnosticCollection = vscode.languages.createDiagnosticCollection('ai-reviewer');
     context.subscriptions.push(diagnosticCollection);
 
-    let disposable = vscode.commands.registerCommand('ai-reviewer-extension.reviewCode', async () => {
+    // 1. Register the Quick Fix Provider specifically for Python files
+    context.subscriptions.push(
+        vscode.languages.registerCodeActionsProvider('python', new AIQuickFixProvider(), {
+            providedCodeActionKinds: [vscode.CodeActionKind.QuickFix]
+        })
+    );
 
+    let disposable = vscode.commands.registerCommand('ai-reviewer-extension.reviewCode', async () => {
         const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            vscode.window.showErrorMessage('No active editor!');
-            return;
-        }
+        if (!editor) return;
 
         const document = editor.document;
-        const code = document.getText();
-        
-        // Clear old markers before starting new review
         diagnosticCollection.clear();
-
-        const payload = {
-            code_content: code,
-            language: document.languageId, 
-            file_name: "test.py" // Ideally, pass document.fileName
-        };
 
         try {
             vscode.window.setStatusBarMessage('AI: Reviewing...', 3000);
-            
-            // Call the Backend
-            const response = await axios.post('http://127.0.0.1:8001/review', payload);
-            const issues = response.data.issues;
-            
-            if (!issues || issues.length === 0) {
-                vscode.window.showInformationMessage('No issues found! Clean code.');
-                return;
-            }
+            const response = await axios.post('http://127.0.0.1:8001/review', {
+                code_content: document.getText(),
+                language: document.languageId,
+                file_name: "test.py"
+            });
 
             const diagnostics: vscode.Diagnostic[] = [];
-
-            for (const issue of issues) {
-                const lineIndex = (issue.line || 1) - 1; 
+            for (const issue of response.data.issues) {
+                const lineIndex = (issue.line || 1) - 1;
                 const range = new vscode.Range(lineIndex, 0, lineIndex, 100);
 
-                // --- DYNAMIC SEVERITY LOGIC ---
-                // Distinguishes between critical bugs and AI suggestions
-                let severity: vscode.DiagnosticSeverity;
-
+                let severity = vscode.DiagnosticSeverity.Information;
                 if (issue.tool === "pylint" || issue.type.includes("Security")) {
-                    severity = vscode.DiagnosticSeverity.Error; // Red line
+                    severity = vscode.DiagnosticSeverity.Error;
                 } else if (issue.tool === "AST Parser") {
-                    severity = vscode.DiagnosticSeverity.Warning; // Orange/Yellow line
-                } else {
-                    // This covers AI-Reviewer (CodeT5) suggestions
-                    severity = vscode.DiagnosticSeverity.Information; // Blue line
+                    severity = vscode.DiagnosticSeverity.Warning;
                 }
 
-                const diagnostic = new vscode.Diagnostic(
-                    range, 
-                    `[${issue.tool}] ${issue.msg}`, 
-                    severity
-                );
+                // Create the diagnostic with the combined tool and message string
+                const diagnostic = new vscode.Diagnostic(range, `[${issue.tool}] ${issue.msg}`, severity);
+                
+                // Store the raw message in the diagnostic code field for easy filtering in the provider
+                if (issue.tool === "AI-Reviewer") {
+                    diagnostic.code = "AI_FIX"; 
+                }
                 
                 diagnostics.push(diagnostic);
             }
-
-            // Apply the diagnostics to the file
             diagnosticCollection.set(document.uri, diagnostics);
-            vscode.window.showWarningMessage(`Found ${issues.length} issues across 4 analysis layers!`);
-
         } catch (error) {
-            console.error(error);
-            // This error occurs if the backend is not running or still loading models
-            vscode.window.showErrorMessage('Error connecting to backend. Ensure python app.py is running.');
+            vscode.window.showErrorMessage('Backend connection failed. Ensure app.py is running.');
         }
     });
-
     context.subscriptions.push(disposable);
 }
 
-export function deactivate() {}
+// 2. The Refined Quick Fix Class
+// --- Updated Quick Fix Class ---
+class AIQuickFixProvider implements vscode.CodeActionProvider {
+    public provideCodeActions(
+        document: vscode.TextDocument, 
+        range: vscode.Range | vscode.Selection, 
+        context: vscode.CodeActionContext
+    ): vscode.CodeAction[] {
+        // Find all diagnostics that were tagged with "AI_FIX"
+        return context.diagnostics
+            .filter(diag => {
+                // Check if the diagnostic code is AI_FIX (handles both string and object forms)
+                const isAiFix = typeof diag.code === 'object' ? diag.code.value === "AI_FIX" : diag.code === "AI_FIX";
+                return isAiFix && diag.message.includes("refactoring to:");
+            })
+            .map(diag => this.createFix(document, diag));
+    }
+
+    private createFix(document: vscode.TextDocument, diagnostic: vscode.Diagnostic): vscode.CodeAction {
+        const fix = new vscode.CodeAction(`✨ Apply AI Suggestion`, vscode.CodeActionKind.QuickFix);
+        const edit = new vscode.WorkspaceEdit();
+        
+        // Use a more robust regex to extract the code after the colon
+        const message = diagnostic.message;
+        const suggestionMatch = message.match(/refactoring to:\s+(.*)/);
+        const suggestedCode = suggestionMatch ? suggestionMatch[1].trim() : "";
+        
+        if (suggestedCode) {
+            // Replace the line with the AI's suggested code
+            edit.replace(document.uri, diagnostic.range, suggestedCode);
+            fix.edit = edit;
+            fix.diagnostics = [diagnostic];
+            fix.isPreferred = true; // Makes it the default choice for Ctrl + .
+        }
+
+        return fix;
+    }
+}
