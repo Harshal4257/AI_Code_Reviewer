@@ -39,7 +39,10 @@ class AnalysisEngine:
         # 3. AI/LLM Analysis (CodeT5 + CodeBERT)
         logging.info("Starting AI/LLM analysis...")
         try:
-            ai_raw_issues = self.ai_analyzer.analyze(code_content)
+            # Collect error line numbers from previous static/AST tools
+            error_lines = [issue.line for issue in all_issues]
+            
+            ai_raw_issues = self.ai_analyzer.analyze(code_content, error_lines)
             for i in ai_raw_issues:
                 all_issues.append(Issue(
                     line=i.get("line", 1),

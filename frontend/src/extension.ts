@@ -5,14 +5,15 @@ export function activate(context: vscode.ExtensionContext) {
     const diagnosticCollection = vscode.languages.createDiagnosticCollection('ai-reviewer');
     context.subscriptions.push(diagnosticCollection);
 
-    // 1. Register the Quick Fix Provider specifically for Python files
+    // 1. Register Quick Fix Provider for Python
     context.subscriptions.push(
         vscode.languages.registerCodeActionsProvider('python', new AIQuickFixProvider(), {
             providedCodeActionKinds: [vscode.CodeActionKind.QuickFix]
         })
     );
 
-    let disposable = vscode.commands.registerCommand('ai-reviewer-extension.reviewCode', async () => {
+    // 2. Main Review Command
+    let reviewDisposable = vscode.commands.registerCommand('ai-reviewer-extension.reviewCode', async () => {
         const editor = vscode.window.activeTextEditor;
         if (!editor) return;
 
@@ -24,13 +25,17 @@ export function activate(context: vscode.ExtensionContext) {
             const response = await axios.post('http://127.0.0.1:8001/review', {
                 code_content: document.getText(),
                 language: document.languageId,
-                file_name: "test.py"
+                file_name: document.fileName
             });
 
             const diagnostics: vscode.Diagnostic[] = [];
             for (const issue of response.data.issues) {
                 const lineIndex = (issue.line || 1) - 1;
-                const range = new vscode.Range(lineIndex, 0, lineIndex, 100);
+                
+                // --- PRECISE RANGE FIX ---
+                // Get the actual line from the document to ensure we replace only that line
+                const line = document.lineAt(lineIndex);
+                const range = line.range; 
 
                 let severity = vscode.DiagnosticSeverity.Information;
                 if (issue.tool === "pylint" || issue.type.includes("Security")) {
@@ -39,10 +44,8 @@ export function activate(context: vscode.ExtensionContext) {
                     severity = vscode.DiagnosticSeverity.Warning;
                 }
 
-                // Create the diagnostic with the combined tool and message string
                 const diagnostic = new vscode.Diagnostic(range, `[${issue.tool}] ${issue.msg}`, severity);
                 
-                // Store the raw message in the diagnostic code field for easy filtering in the provider
                 if (issue.tool === "AI-Reviewer") {
                     diagnostic.code = "AI_FIX"; 
                 }
@@ -51,26 +54,50 @@ export function activate(context: vscode.ExtensionContext) {
             }
             diagnosticCollection.set(document.uri, diagnostics);
         } catch (error) {
-            vscode.window.showErrorMessage('Backend connection failed. Ensure app.py is running.');
+            vscode.window.showErrorMessage('Backend connection failed. Check if app.py is running.');
         }
     });
-    context.subscriptions.push(disposable);
+
+    // 3. Command to Apply All AI Suggestions at once
+    let applyAllDisposable = vscode.commands.registerCommand('ai-reviewer-extension.applyAllFixes', async () => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) return;
+
+        const document = editor.document;
+        const diagnostics = diagnosticCollection.get(document.uri);
+        
+        if (!diagnostics) return;
+
+        const edit = new vscode.WorkspaceEdit();
+        let count = 0;
+
+        for (const diag of diagnostics) {
+            const isAiFix = typeof diag.code === 'object' ? diag.code.value === "AI_FIX" : diag.code === "AI_FIX";
+            if (isAiFix && diag.message.includes("refactoring to:")) {
+                const suggestion = diag.message.split("refactoring to: ")[1];
+                if (suggestion) {
+                    edit.replace(document.uri, diag.range, suggestion.trim());
+                    count++;
+                }
+            }
+        }
+
+        if (count > 0) {
+            await vscode.workspace.applyEdit(edit);
+            vscode.window.showInformationMessage(`Applied ${count} AI refactoring suggestions.`);
+        }
+    });
+
+    context.subscriptions.push(reviewDisposable, applyAllDisposable);
 }
 
-// 2. The Refined Quick Fix Class
-// --- Updated Quick Fix Class ---
+// 4. Quick Fix Provider Class
 class AIQuickFixProvider implements vscode.CodeActionProvider {
-    public provideCodeActions(
-        document: vscode.TextDocument, 
-        range: vscode.Range | vscode.Selection, 
-        context: vscode.CodeActionContext
-    ): vscode.CodeAction[] {
-        // Find all diagnostics that were tagged with "AI_FIX"
+    public provideCodeActions(document: vscode.TextDocument, range: vscode.Range, context: vscode.CodeActionContext): vscode.CodeAction[] {
         return context.diagnostics
             .filter(diag => {
-                // Check if the diagnostic code is AI_FIX (handles both string and object forms)
-                const isAiFix = typeof diag.code === 'object' ? diag.code.value === "AI_FIX" : diag.code === "AI_FIX";
-                return isAiFix && diag.message.includes("refactoring to:");
+                const code = typeof diag.code === 'object' ? diag.code.value : diag.code;
+                return code === "AI_FIX" && diag.message.includes("refactoring to:");
             })
             .map(diag => this.createFix(document, diag));
     }
@@ -79,17 +106,13 @@ class AIQuickFixProvider implements vscode.CodeActionProvider {
         const fix = new vscode.CodeAction(`✨ Apply AI Suggestion`, vscode.CodeActionKind.QuickFix);
         const edit = new vscode.WorkspaceEdit();
         
-        // Use a more robust regex to extract the code after the colon
-        const message = diagnostic.message;
-        const suggestionMatch = message.match(/refactoring to:\s+(.*)/);
-        const suggestedCode = suggestionMatch ? suggestionMatch[1].trim() : "";
-        
-        if (suggestedCode) {
-            // Replace the line with the AI's suggested code
-            edit.replace(document.uri, diagnostic.range, suggestedCode);
+        const suggestion = diagnostic.message.split("refactoring to: ")[1];
+        if (suggestion) {
+            // Using the diagnostic's own range ensures we only replace the target line
+            edit.replace(document.uri, diagnostic.range, suggestion.trim());
             fix.edit = edit;
             fix.diagnostics = [diagnostic];
-            fix.isPreferred = true; // Makes it the default choice for Ctrl + .
+            fix.isPreferred = true;
         }
 
         return fix;

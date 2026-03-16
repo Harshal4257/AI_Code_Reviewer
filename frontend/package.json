@@ -9,17 +9,34 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [
-    "onCommand:ai-reviewer-extension.reviewCode"
-  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "ai-reviewer-extension.reviewCode",
-        "title": "AI: Review Code"
+        "title": "AI: Review Code",
+        "icon": "$(play)"
+      },
+      {
+        "command": "ai-reviewer-extension.applyAllFixes",
+        "title": "AI: Apply All Fixes",
+        "icon": "$(wand)"
       }
-    ]
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "ai-reviewer-extension.reviewCode",
+          "group": "navigation",
+          "when": "resourceExtname == .py || resourceExtname == .js || resourceExtname == .ts"
+        },
+        {
+          "command": "ai-reviewer-extension.applyAllFixes",
+          "group": "navigation",
+          "when": "resourceExtname == .py || resourceExtname == .js || resourceExtname == .ts"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",

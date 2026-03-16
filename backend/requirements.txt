@@ -8,3 +8,4 @@ radon
 jinja2
 torch
 transformers
+protobuf
