@@ -5,17 +5,18 @@ class CodeInput(BaseModel):
     """Schema for the code we receive from the IDE."""
     language: str
     code_content: str 
-    file_name: str # Added to match extension.ts payload
+    file_name: str 
 
 class Issue(BaseModel):
     """A single issue found by any tool."""
-    line: int      # Changed from line_number to match analyzers/extension
+    line: int      
     tool: str  
-    type: str      # Added to match StaticAnalyzer
-    msg: str       # Changed from message to match StaticAnalyzer
+    type: str      
+    msg: str       
 
 class ReviewOutput(BaseModel):
     """The final JSON report we send back to the IDE."""
     status: str
-    file_name: str
+    # CHANGED: Optional prevents 500 errors if the filename is missing
+    file_name: Optional[str] = None 
     issues: List[Issue]

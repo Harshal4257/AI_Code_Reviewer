@@ -21,40 +21,64 @@ export function activate(context: vscode.ExtensionContext) {
         diagnosticCollection.clear();
 
         try {
-            vscode.window.setStatusBarMessage('AI: Reviewing...', 3000);
+            vscode.window.setStatusBarMessage('AI: Reviewing (Loading models may take time)...', 10000);
+
             const response = await axios.post('http://127.0.0.1:8001/review', {
                 code_content: document.getText(),
                 language: document.languageId,
                 file_name: document.fileName
+            }, {
+                timeout: 180000 
             });
 
             const diagnostics: vscode.Diagnostic[] = [];
+            
+            // Get total lines to prevent "Illegal value" crashes
+            const totalLines = document.lineCount;
+
             for (const issue of response.data.issues) {
-                const lineIndex = (issue.line || 1) - 1;
+                // --- LINE SAFETY GUARD ---
+                // 1. Ensure line is at least 1 (backend sometimes sends 0)
+                // 2. Convert to 0-based index
+                // 3. Clamp between 0 and (totalLines - 1)
+                let rawLine = issue.line || 1;
+                let lineIndex = Math.max(0, Math.min(rawLine - 1, totalLines - 1));
                 
-                // --- PRECISE RANGE FIX ---
-                // Get the actual line from the document to ensure we replace only that line
-                const line = document.lineAt(lineIndex);
-                const range = line.range; 
+                try {
+                    const line = document.lineAt(lineIndex);
+                    const range = line.range; 
 
-                let severity = vscode.DiagnosticSeverity.Information;
-                if (issue.tool === "pylint" || issue.type.includes("Security")) {
-                    severity = vscode.DiagnosticSeverity.Error;
-                } else if (issue.tool === "AST Parser") {
-                    severity = vscode.DiagnosticSeverity.Warning;
-                }
+                    let severity = vscode.DiagnosticSeverity.Information;
+                    if (issue.tool === "CodeBERT" || issue.type.includes("Security")) {
+                        severity = vscode.DiagnosticSeverity.Error;
+                    } else if (issue.tool === "AST Parser") {
+                        severity = vscode.DiagnosticSeverity.Warning;
+                    }
 
-                const diagnostic = new vscode.Diagnostic(range, `[${issue.tool}] ${issue.msg}`, severity);
-                
-                if (issue.tool === "AI-Reviewer") {
-                    diagnostic.code = "AI_FIX"; 
+                    const diagnostic = new vscode.Diagnostic(range, `[${issue.tool}] ${issue.msg}`, severity);
+                    
+                    if (issue.tool === "AI-Reviewer") {
+                        diagnostic.code = "AI_FIX"; 
+                    }
+                    
+                    diagnostics.push(diagnostic);
+                } catch (lineErr) {
+                    console.error(`Could not create diagnostic for line ${lineIndex}:`, lineErr);
                 }
-                
-                diagnostics.push(diagnostic);
             }
             diagnosticCollection.set(document.uri, diagnostics);
-        } catch (error) {
-            vscode.window.showErrorMessage('Backend connection failed. Check if app.py is running.');
+            vscode.window.setStatusBarMessage('AI: Review Complete!', 3000);
+
+        } catch (error: any) {
+            let errorMsg = 'Backend connection failed. Check if app.py is running.';
+            if (error.code === 'ECONNABORTED') {
+                errorMsg = 'AI Review timed out. The models are still loading on the server.';
+            } else if (error.response) {
+                errorMsg = `Server Error: ${error.response.status} - ${error.response.data.detail || 'Check backend logs.'}`;
+            }
+            
+            vscode.window.showErrorMessage(errorMsg);
+            console.error("Extension Request Error:", error);
         }
     });
 
@@ -108,7 +132,6 @@ class AIQuickFixProvider implements vscode.CodeActionProvider {
         
         const suggestion = diagnostic.message.split("refactoring to: ")[1];
         if (suggestion) {
-            // Using the diagnostic's own range ensures we only replace the target line
             edit.replace(document.uri, diagnostic.range, suggestion.trim());
             fix.edit = edit;
             fix.diagnostics = [diagnostic];

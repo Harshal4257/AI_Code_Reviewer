@@ -1,14 +1,30 @@
+import os
+# --- STAGE 0: ENVIRONMENT & BACKGROUND THREAD FIXES ---
+# Must be at the very top to block the 'auto_conversion' thread and PR creation
+os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "true"
+os.environ["SAFETENSORS_FAST_GPU"] = "1"
+os.environ["HF_HUB_DISABLE_AUTO_CONVERSION"] = "1"
+
+# Monkey-patching the conversion function to hard-block the failing thread
+try:
+    import transformers.safetensors_conversion as conversion
+    conversion.auto_conversion = lambda *args, **kwargs: None 
+except ImportError:
+    pass
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-import sys
+import transformers # Added to control logging verbosity
 
 # --- Our Imports ---
 from src.ai_reviewer.schemas.review_schema import CodeInput, ReviewOutput
 from src.ai_reviewer.pipelines.review_pipeline import ReviewPipeline
-from src.ai_reviewer.exception import customexception
 from src.ai_reviewer.logger import logging
+
+# Mute standard library warnings for a cleaner console
+transformers.utils.logging.set_verbosity_error()
 
 app = FastAPI(
     title="AI Code Reviewer & PR Assistant API",
@@ -27,7 +43,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # --- PERMANENT FIX: Lazy Loading Singleton ---
-# We set this to None so the server starts up instantly without using much RAM.
 pipeline = None
 
 def get_pipeline():
@@ -42,7 +57,7 @@ def get_pipeline():
         except Exception as e:
             logging.error(f"Failed to initialize ReviewPipeline during lazy load: {e}")
             import traceback
-            print(traceback.format_exc())
+            logging.error(traceback.format_exc())
             raise e
     return pipeline
 
@@ -53,14 +68,12 @@ def read_root(request: Request):
 @app.post("/review", response_model=ReviewOutput)
 def run_code_review(input: CodeInput):
     """
-    This endpoint now triggers the model loading only on the first request.
+    This endpoint triggers the model loading only on the first request.
     """
     try:
         logging.info(f"Received review request for file: {input.file_name}")
         
-        # Get the pipeline (loads models on 1st request, returns cached one after)
         current_pipeline = get_pipeline()
-        
         review_output = current_pipeline.run(input)
         
         logging.info(f"Review successful. Found {len(review_output.issues)} issues.")
@@ -68,11 +81,17 @@ def run_code_review(input: CodeInput):
 
     except Exception as e:
         import traceback
-        print(traceback.format_exc()) 
         logging.error(f"Error during /review endpoint: {e}")
+        logging.error(traceback.format_exc()) 
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
-    # Added timeout_keep_alive to prevent connection drops during heavy AI loading
-    uvicorn.run(app, host="127.0.0.1", port=8001, timeout_keep_alive=60)
+    # 127.0.0.1 is more stable for VS Code extensions on Windows
+    # Increased keep-alive to 300s to handle long model loading times
+    uvicorn.run(
+        app, 
+        host="127.0.0.1", 
+        port=8001, 
+        timeout_keep_alive=300
+    )

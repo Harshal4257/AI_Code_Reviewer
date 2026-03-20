@@ -67,11 +67,20 @@ class StaticAnalyzer:
             raise customexception(e, sys)
 
     def _run_radon(self, filepath: str) -> List[Issue]:
+        """
+        Calculates cyclomatic complexity. 
+        Added robustness for files with syntax errors.
+        """
         logging.info(f"Radon: Analyzing {filepath}")
         issues = []
         try:
             with open(filepath, 'r') as f:
-                tree = ast.parse(f.read())
+                code_content = f.read()
+                if not code_content.strip():
+                    return []
+                # Attempt to parse the AST for complexity analysis
+                tree = ast.parse(code_content)
+            
             visitor = ComplexityVisitor.from_ast(tree)
             
             for item in (visitor.functions + visitor.classes):
@@ -83,5 +92,10 @@ class StaticAnalyzer:
                         msg=f"{type(item).__name__} '{item.name}' complexity is {item.complexity}"
                     ))
             return issues
+        except (SyntaxError, IndentationError):
+            # Gracefully handle code that cannot be parsed by the AST
+            logging.warning(f"Radon skipped for {filepath} due to syntax errors.")
+            return []
         except Exception as e:
-            raise customexception(e, sys)
+            logging.error(f"Unexpected error in Radon analysis: {e}")
+            return []
