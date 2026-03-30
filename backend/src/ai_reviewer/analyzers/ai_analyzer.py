@@ -58,11 +58,12 @@ class AIAnalyzer:
         error_lines = list(set(error_lines))
 
         # --- Phase 1: CodeBERT Security Check ---
-        for i in range(0, len(lines), 10):
-            chunk = '\n'.join(lines[i:i+10])
-            if not chunk.strip(): continue
+        for i, line in enumerate(lines):
+            target_line = line.strip()
+            if not target_line or target_line.startswith("#"):
+                continue
             try:
-                inputs = self.bert_tokenizer(chunk, return_tensors="pt", truncation=True, padding=True, max_length=512).to(self.device)
+                inputs = self.bert_tokenizer(target_line, return_tensors="pt", truncation=True, padding=True, max_length=512).to(self.device)
                 with torch.no_grad():
                     outputs = self.bert_model(**inputs)
                     if torch.argmax(outputs.logits, dim=1).item() == 1: 
@@ -73,7 +74,7 @@ class AIAnalyzer:
                             "line": i + 1 
                         })
             except Exception as e:
-                logging.error(f"CodeBERT error: {e}")
+                logging.error(f"CodeBERT error on line {i + 1}: {e}")
 
         # --- Phase 2: CodeT5+ Refactoring Suggestions ---
         for line_num in error_lines:

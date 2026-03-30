@@ -42,6 +42,12 @@ class AnalysisEngine:
             # Collect error line numbers from previous static/AST tools
             error_lines = [issue.line for issue in all_issues]
             
+            # Combine with all non-empty line numbers in the file
+            for i, line in enumerate(code_content.split('\n')):
+                if line.strip():
+                    error_lines.append(i + 1)
+            error_lines = list(set(error_lines))
+            
             ai_raw_issues = self.ai_analyzer.analyze(code_content, error_lines)
             for i in ai_raw_issues:
                 all_issues.append(Issue(
