@@ -1,8 +1,10 @@
 {
   "name": "ai-reviewer-extension",
   "displayName": "AI Code Reviewer",
-  "description": "Shows a web demo of the AI Code Reviewer.",
-  "version": "0.0.1",
+  "description": "AI-powered Python code reviewer using Groq LLaMA-3 — finds bugs, security issues and fixes them instantly.",
+  "version": "1.0.0",
+  "publisher": "antigravity",
+  "icon": "icon.png",
   "engines": {
     "vscode": "^1.90.0"
   },
