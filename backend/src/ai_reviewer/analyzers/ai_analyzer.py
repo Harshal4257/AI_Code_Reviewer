@@ -55,28 +55,25 @@ class AIAnalyzer:
                 logging.warning("GROQ_API_KEY not set. Falling back to local LLMs.")
 
         # CodeBERT
-        # CodeBERT — available but not loaded (Groq handles analysis)
         self.bert_name = "mrm8488/codebert-base-finetuned-detect-insecure-code"
-        self.bert_tokenizer = None
-        self.bert_model = None
-        # self.bert_tokenizer = RobertaTokenizer.from_pretrained(self.bert_name, use_fast=False)
-        # self.bert_model = AutoModelForSequenceClassification.from_pretrained(
-        #     self.bert_name,
-        #     use_safetensors=False
-        # ).to(self.device)
+        self.bert_tokenizer = RobertaTokenizer.from_pretrained(self.bert_name, use_fast=False)
+        self.bert_model = AutoModelForSequenceClassification.from_pretrained(
+            self.bert_name,
+            use_safetensors=False
+        ).to(self.device)
 
-        # CodeT5+ — available but not loaded (Groq handles analysis)
+        # CodeT5+
         self.suggest_model_name = "Salesforce/codet5p-220m"
-        self.suggest_tokenizer = None
-        self.suggest_model = None
-        # try:
-        #     self.suggest_tokenizer = T5Tokenizer.from_pretrained(self.suggest_model_name, use_fast=False)
-        # except Exception:
-        #     self.suggest_tokenizer = T5Tokenizer.from_pretrained("t5-base", use_fast=False)
-        # self.suggest_model = AutoModelForSeq2SeqLM.from_pretrained(
-        #     self.suggest_model_name,
-        #     use_safetensors=False
-        # ).to(self.device)
+        try:
+            self.suggest_tokenizer = T5Tokenizer.from_pretrained(self.suggest_model_name, use_fast=False)
+        except Exception:
+            self.suggest_tokenizer = T5Tokenizer.from_pretrained("t5-base", use_fast=False)
+
+        self.suggest_model = AutoModelForSeq2SeqLM.from_pretrained(
+            self.suggest_model_name,
+            use_safetensors=False
+        ).to(self.device)
+
     # ====================================================================
     # PRE-SCAN — Python AST + Regex (deterministic, never misses)
     # ====================================================================
