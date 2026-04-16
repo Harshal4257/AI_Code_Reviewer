@@ -1,8 +1,7 @@
 import os
 
-# --- STAGE 0: ENVIRONMENT FIXES ---
+# --- ENVIRONMENT FIXES (must be before any transformers import) ---
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "true"
-os.environ["SAFETENSORS_FAST_GPU"] = "1"
 os.environ["HF_HUB_DISABLE_AUTO_CONVERSION"] = "1"
 
 try:
@@ -14,20 +13,15 @@ except ImportError:
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import transformers
 
 from src.ai_reviewer.schemas.review_schema import CodeInput, ReviewOutput
 from src.ai_reviewer.pipelines.review_pipeline import ReviewPipeline
 from src.ai_reviewer.logger import logging
 
-transformers.utils.logging.set_verbosity_error()
-
-app = FastAPI(title="AI Code Reviewer & PR Assistant API", version="0.0.1")
+app = FastAPI(title="AI Code Reviewer API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,9 +31,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
-
 # --- Lazy Loading Singleton ---
 pipeline = None
 
@@ -47,7 +38,7 @@ def get_pipeline():
     global pipeline
     if pipeline is None:
         try:
-            logging.info("Lazy loading AI models for the first time...")
+            logging.info("Initializing AI pipeline...")
             pipeline = ReviewPipeline()
         except Exception as e:
             logging.error(f"Failed to initialize ReviewPipeline: {e}")
@@ -58,8 +49,8 @@ def get_pipeline():
 
 
 @app.get("/")
-def read_root(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+def health_check():
+    return {"status": "AI Code Reviewer API is running"}
 
 
 @app.post("/review", response_model=ReviewOutput)
@@ -102,4 +93,5 @@ def get_fixed_code():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8001, timeout_keep_alive=300)
+    port = int(os.environ.get("PORT", 8001))
+    uvicorn.run(app, host="0.0.0.0", port=port, timeout_keep_alive=300)
