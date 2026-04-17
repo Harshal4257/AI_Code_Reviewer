@@ -13,9 +13,10 @@ except ImportError:
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import List
 
 from src.ai_reviewer.schemas.review_schema import CodeInput, ReviewOutput
 from src.ai_reviewer.pipelines.review_pipeline import ReviewPipeline
@@ -89,6 +90,79 @@ def get_fixed_code():
     except Exception as e:
         logging.error(f"Error in /fix: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── PR SIMULATION: Suggest Commit Message ────────────────────────────────────
+
+class CommitRequest(BaseModel):
+    fixedFiles: List[str]
+    issuesSummary: str
+
+
+class CommitResponse(BaseModel):
+    commitMessage: str
+
+
+@app.post("/suggest-commit", response_model=CommitResponse)
+async def suggest_commit(request: CommitRequest):
+    """
+    Given the list of AI-fixed files and a summary of issues,
+    returns an AI-generated conventional commit message.
+    Called by the VS Code extension for the PR Simulation push flow.
+    """
+    try:
+        current_pipeline = get_pipeline()
+        groq_client = current_pipeline.engine.ai_analyzer.client
+
+        files_str = ", ".join(request.fixedFiles) if request.fixedFiles else "unknown file"
+        issues_str = request.issuesSummary or "various code quality and security issues"
+
+        prompt = f"""You are a Git commit message generator for a professional developer.
+
+A developer used an AI code reviewer to automatically fix issues in their Python code.
+
+Fixed files: {files_str}
+Issues that were fixed: {issues_str}
+
+Generate ONE conventional commit message following this exact format:
+fix(<scope>): <short description of what was fixed>
+
+Rules:
+- Use "fix" as the type
+- scope = the filename without extension (e.g. app, db_handler, utils)
+- Description must be under 60 characters
+- Be specific about what was fixed (e.g. "removed hardcoded password and SQL injection")
+- Do NOT include any explanation, just the commit message on one line
+
+Example output:
+fix(app): remove hardcoded secret and fix SQL injection vulnerability"""
+
+        response = groq_client.chat.completions.create(
+            model="llama3-70b-8192",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=80,
+            temperature=0.3
+        )
+
+        commit_msg = response.choices[0].message.content.strip()
+
+        # Clean up: remove quotes if model wrapped it
+        commit_msg = commit_msg.strip('"').strip("'")
+
+        # Fallback if response is too long or weird
+        if len(commit_msg) > 100 or '\n' in commit_msg:
+            commit_msg = f"fix: applied AI code review fixes to {files_str}"
+
+        logging.info(f"Suggested commit message: {commit_msg}")
+        return CommitResponse(commitMessage=commit_msg)
+
+    except Exception as e:
+        logging.error(f"Error in /suggest-commit: {e}")
+        # Return a safe fallback instead of 500 error
+        files_str = ", ".join(request.fixedFiles) if request.fixedFiles else "code"
+        return CommitResponse(
+            commitMessage=f"fix: applied AI code review fixes to {files_str}"
+        )
 
 
 if __name__ == "__main__":

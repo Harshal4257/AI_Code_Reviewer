@@ -1,15 +1,31 @@
 {
   "name": "ai-reviewer-extension",
-  "displayName": "AI Code Reviewer",
+  "displayName": "AI Code Reviewer for Python",
   "description": "AI-powered Python code reviewer using Groq LLaMA-3 — finds bugs, security issues and fixes them instantly.",
-  "version": "1.0.0",
-  "publisher": "antigravity",
+  "version": "1.0.3",
+  "publisher": "ai-code-reviewer",
   "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Harshal4257/AI_Code_Reviewer"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
   "categories": [
-    "Other"
+    "Linters",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "ai",
+    "code review",
+    "python",
+    "groq",
+    "llama",
+    "security",
+    "bug finder",
+    "github",
+    "pull request"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -23,6 +39,11 @@
         "command": "ai-reviewer-extension.applyAllFixes",
         "title": "AI: Apply All Fixes",
         "icon": "$(wand)"
+      },
+      {
+        "command": "ai-reviewer-extension.pushToGitHub",
+        "title": "AI: Push Fixed Files to GitHub (PR Simulation)",
+        "icon": "$(git-pull-request)"
       }
     ],
     "menus": {
@@ -36,8 +57,23 @@
           "command": "ai-reviewer-extension.applyAllFixes",
           "group": "navigation",
           "when": "resourceExtname == .py || resourceExtname == .js || resourceExtname == .ts"
+        },
+        {
+          "command": "ai-reviewer-extension.pushToGitHub",
+          "group": "navigation",
+          "when": "resourceExtname == .py || resourceExtname == .js || resourceExtname == .ts"
         }
       ]
+    },
+    "configuration": {
+      "title": "AI Code Reviewer",
+      "properties": {
+        "aiReviewer.backendUrl": {
+          "type": "string",
+          "default": "https://ai-code-reviewer-f1mo.onrender.com",
+          "description": "Backend API URL for AI Code Reviewer"
+        }
+      }
     }
   },
   "scripts": {
